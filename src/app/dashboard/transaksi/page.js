@@ -15,6 +15,7 @@ import {
   getDoc,
   updateDoc,
   where,
+  setDoc,
 } from "firebase/firestore";
 
 import { FaEdit, FaTrash, FaPrint } from "react-icons/fa";
@@ -31,6 +32,7 @@ export default function Transaksi() {
   const router = useRouter();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
+  const [savedPrinter, setSavedPrinter] = useState(null);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -72,6 +74,16 @@ export default function Transaksi() {
     fetchTransactions();
   }, [router]);
 
+  useEffect(() => {
+    const fetchSavedPrinter = async () => {
+      const printerDoc = await getDoc(doc(db, "settings", "printer"));
+      if (printerDoc.exists()) {
+        setSavedPrinter(printerDoc.data());
+      }
+    };
+    fetchSavedPrinter();
+  }, []);
+
   const handleDelete = (id) => {
     setDeleteId(id);
     setShowDeleteModal(true);
@@ -106,37 +118,135 @@ export default function Transaksi() {
 
   const handlePrint = async (trans) => {
     try {
-      const printData = {
-        header: [
-          "Nama Toko",
-          "Alamat Toko",
-          "Telp: xxx-xxx-xxx",
-          "-".repeat(32),
-        ],
-        items: trans.items,
-        total: trans.total,
-        payment: trans.payment,
-        change: trans.change,
-        footer: ["-".repeat(32), "Terima Kasih", "Selamat Berbelanja Kembali"],
-      };
+      let device;
 
-      // Cek apakah running di Electron
-      if (window.electronAPI) {
-        try {
-          const result = await window.electronAPI.printReceipt(printData);
-          if (result.success) {
-            alert("Struk berhasil dicetak!");
-          }
-        } catch (error) {
-          console.error("Electron printing error:", error);
-          alert("Gagal mencetak struk. Pastikan printer sudah terhubung.");
-        }
+      if (!savedPrinter) {
+        // If no saved printer, request new connection
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
+        });
+
+        // Save printer info to Firebase
+        await setDoc(doc(db, "settings", "printer"), {
+          name: device.name,
+          id: device.id,
+        });
+        setSavedPrinter({ name: device.name, id: device.id });
       } else {
-        alert("Fitur cetak hanya tersedia di aplikasi desktop");
+        // Use saved printer
+        const devices = await navigator.bluetooth.getDevices();
+        device = devices.find((d) => d.id === savedPrinter.id);
+
+        if (!device) {
+          // If saved printer not found, request new connection
+          device = await navigator.bluetooth.requestDevice({
+            filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
+          });
+
+          // Update saved printer info
+          await setDoc(doc(db, "settings", "printer"), {
+            name: device.name,
+            id: device.id,
+          });
+          setSavedPrinter({ name: device.name, id: device.id });
+        }
       }
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(
+        "000018f0-0000-1000-8000-00805f9b34fb"
+      );
+      const characteristic = await service.getCharacteristic(
+        "00002af1-0000-1000-8000-00805f9b34fb"
+      );
+
+      // Modern receipt format with centered text and better spacing
+      const receiptParts = [
+        [
+          "\x1B\x40", // Initialize printer
+          "\x1B\x61\x01", // Center alignment
+          "\x1B\x21\x10", // Double height text
+          "SUNIK YOHAN\n",
+          "\x1B\x21\x00", // Normal text
+          "\n",
+          "Kp dukuh, RT.03/RW.08, Cibadak\n",
+          "Kec. Ciampea, Kabupaten Bogor\n",
+          "Jawa Barat 16620\n",
+          "Telp: 0812-8425-8290\n\n",
+          "\x1B\x61\x00", // Left alignment
+          "================================\n",
+          "\x1B\x61\x01", // Center alignment
+          "STRUK PEMBELIAN\n",
+          "\x1B\x61\x00", // Left alignment
+          `Nomor   : ${trans.transactionCode}\n`,
+          `Tanggal : ${trans.date.toLocaleDateString("id-ID", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })}\n`,
+          `Waktu   : ${trans.date.toLocaleTimeString("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}\n`,
+          "================================\n",
+        ].join(""),
+      ];
+
+      // Items section with better formatting
+      for (const item of trans.items) {
+        const itemName = `${item.namaBarang}${
+          item.size ? ` (${item.size})` : ""
+        }`;
+        const quantity = `${item.quantity}x`;
+        const price = `@Rp ${(item.harga || 0).toLocaleString()}`;
+        const total = `Rp ${(
+          (item.harga || 0) * item.quantity
+        ).toLocaleString()}`;
+
+        receiptParts.push(
+          `${itemName}\n` + `${quantity.padEnd(6)}${price.padEnd(15)}${total}\n`
+        );
+      }
+
+      // Footer section with payment details
+      receiptParts.push(
+        [
+          "================================\n",
+          `TOTAL${" ".repeat(26)}Rp ${trans.total.toLocaleString()}\n`,
+          `TUNAI${" ".repeat(26)}Rp ${trans.paymentAmount.toLocaleString()}\n`,
+          `KEMBALI${" ".repeat(24)}Rp ${trans.change.toLocaleString()}\n`,
+          "================================\n\n",
+          "\x1B\x61\x01", // Center alignment
+          "Terima kasih atas kunjungan Anda\n\n",
+          "\x1B\x21\x10", // Double height text
+          "SELAMAT BERBELANJA KEMBALI\n",
+          "\x1B\x21\x00", // Normal text
+          "\n",
+          "Barang yang sudah dibeli\n",
+          "tidak dapat ditukar/dikembalikan\n",
+          "\n\n\n", // Paper feed
+          "\x1D\x56\x41\x03", // Cut paper
+        ].join("")
+      );
+
+      const encoder = new TextEncoder();
+      for (const part of receiptParts) {
+        const data = encoder.encode(part);
+        await characteristic.writeValue(data);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      alert("Printing started!");
     } catch (error) {
       console.error("Printing error:", error);
-      alert("Terjadi kesalahan saat mencetak struk");
+      if (error.name === "NotFoundError") {
+        // Clear saved printer if not found
+        await deleteDoc(doc(db, "settings", "printer"));
+        setSavedPrinter(null);
+        alert("Printer tidak ditemukan. Silakan hubungkan printer baru.");
+      } else {
+        alert("Gagal mencetak. Silakan cek koneksi printer Anda.");
+      }
     }
   };
 
