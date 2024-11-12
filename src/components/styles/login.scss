@@ -1,0 +1,202 @@
+@import "./globals.scss";
+
+.login {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    &__container {
+        width: 100%;
+        display: flex;
+
+        @media (max-width: 1024px) {
+            flex-direction: column;
+            height: auto;
+            min-height: 100vh;
+        }
+
+        .img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 50%;
+            display: grid;
+            place-items: center;
+
+            @media (max-width: 1280px) {
+                width: 40%;
+            }
+
+            @media (max-width: 1024px) {
+                position: relative;
+                width: 100%;
+                height: 40vh;
+                min-height: 300px;
+            }
+
+            @media (max-width: 480px) {
+                height: 35vh;
+                min-height: 250px;
+            }
+
+            img {
+                width: 400px;
+                height: 400px;
+                object-fit: cover;
+
+                @media (max-width: 1024px) {
+                    width: 300px;
+                    height: 300px;
+                }
+
+                @media (max-width: 480px) {
+                    width: 250px;
+                    height: 250px;
+                }
+            }
+        }
+
+        form {
+            width: 50%;
+            position: absolute;
+            background-color: $primary-c;
+            right: 0;
+            top: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2rem;
+            @media (max-width: 1280px) {
+                width: 60%;
+            }
+
+            @media (max-width: 1024px) {
+                position: relative;
+                width: 100%;
+                min-height: 60vh;
+                height: auto;
+                padding: 2rem;
+                gap: 2rem;
+            }
+
+            @media (max-width: 480px) {
+                min-height: 65vh;
+                padding: 1.2rem;
+                gap: 1.5rem;
+                border-radius: 12px;
+            }
+
+            .form__box {
+                width: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 1rem;
+                padding: 1rem 3%;
+                border-radius: 24px;
+                background-color: $background-c;
+                overflow: hidden;
+                @media (max-width: 1024px) {
+                    width: 80%;
+                    padding: 1rem 2%;
+                }
+
+                @media (max-width: 768px) {
+                    width: 90%;
+                }
+
+                input {
+                    padding: 1rem;
+                    width: 100%;
+                    height: 40px;
+                    border: none;
+                    outline: none;
+                    background-color: transparent;
+                    color: $text-c;
+                    font-size: 1.5rem;
+
+                    &:focus {
+                        border: none;
+                    }
+
+                    &::placeholder {
+                        font-size: 1.2rem;
+                        letter-spacing: 2px;
+                    }
+
+                    @media (max-width: 468px) {
+                        padding: 1rem 0;
+                    }
+
+                    @media (max-width: 480px) {
+                        font-size: 1.2rem;
+
+                        &::placeholder {
+                            font-size: 1rem;
+                        }
+                    }
+                }
+
+                .eye-button {
+                    cursor: pointer;
+                    display: grid;
+                    place-items: center;
+                }
+            }
+
+            .btn {
+                width: 50%;
+                display: grid;
+                place-items: center;
+
+                @media (max-width: 1024px) {
+                    width: 80%;
+                }
+
+                @media (max-width: 768px) {
+                    width: 90%;
+                }
+
+                button {
+                    width: 100%;
+                    background-color: $background-c;
+                    height: 50px;
+                    color: $text-c;
+                    font-size: 1.6rem;
+                    letter-spacing: 5px;
+                    border-radius: 24px;
+                    cursor: pointer;
+
+                    @media (max-width: 480px) {
+                        font-size: 1.2rem;
+                        height: 45px;
+                    }
+                }
+            }
+
+            .forgot-password {
+                width: 50%;
+                display: grid;
+                place-items: center;
+                margin-top: 1rem;
+
+                .link {
+                    cursor: pointer;
+                    color: $background-c;
+                    letter-spacing: 2px;
+                    font-size: 1.4rem;
+
+                    @media (max-width: 480px) {
+                        font-size: 1.1rem;
+                    }
+                }
+            }
+        }
+    }
+}

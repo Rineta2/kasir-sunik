@@ -1,0 +1,62 @@
+{
+  "name": "sunik-yohan",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kasir Sunik Yohan",
+  "author": "Yohan",
+  "main": "main.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "electron": "electron .",
+    "electron-pack": "electron-builder -w"
+  },
+  "dependencies": {
+    "@firebase/firestore": "latest",
+    "chart.js": "^4.4.6",
+    "firebase": "latest",
+    "js-cookie": "^3.0.5",
+    "jspdf": "latest",
+    "moment": "^2.30.1",
+    "next": "latest",
+    "node-thermal-printer": "^4.4.3",
+    "react": "latest",
+    "react-calendar": "^5.1.0",
+    "react-chartjs-2": "^5.2.0",
+    "react-datepicker": "^7.5.0",
+    "react-dom": "latest",
+    "react-icons": "latest",
+    "react-to-print": "latest",
+    "react-toastify": "^10.0.6",
+    "sass": "^1.80.6",
+    "swr": "^2.2.5"
+  },
+  "devDependencies": {
+    "@types/debug": "^4.1.12",
+    "@types/fs-extra": "^11.0.4",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.0",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.namaanda.sunik",
+    "productName": "Sunik",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "./src/app/favicon.ico"
+    },
+    "asar": true,
+    "asarUnpack": "**\\*.{node,dll}",
+    "npmRebuild": false,
+    "buildDependenciesFromSource": true
+  }
+}
