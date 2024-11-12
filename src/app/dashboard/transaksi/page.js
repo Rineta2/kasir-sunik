@@ -33,6 +33,9 @@ export default function Transaksi() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [savedPrinter, setSavedPrinter] = useState(null);
+  const [bluetoothDevice, setBluetoothDevice] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastConnectedPrinter, setLastConnectedPrinter] = useState(null);
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -76,12 +79,62 @@ export default function Transaksi() {
 
   useEffect(() => {
     const fetchSavedPrinter = async () => {
-      const printerDoc = await getDoc(doc(db, "settings", "printer"));
-      if (printerDoc.exists()) {
-        setSavedPrinter(printerDoc.data());
+      try {
+        const printerDoc = await getDoc(doc(db, "settings", "printer"));
+        if (printerDoc.exists()) {
+          setSavedPrinter(printerDoc.data());
+          setLastConnectedPrinter(printerDoc.data());
+        }
+      } catch (error) {
+        console.error("Error fetching saved printer:", error);
       }
     };
+
     fetchSavedPrinter();
+  }, []);
+
+  useEffect(() => {
+    if (bluetoothDevice) {
+      setIsConnected(bluetoothDevice.gatt.connected);
+
+      bluetoothDevice.addEventListener("gattserverdisconnected", () => {
+        setIsConnected(false);
+        setBluetoothDevice(null);
+      });
+    } else {
+      setIsConnected(false);
+    }
+  }, [bluetoothDevice]);
+
+  useEffect(() => {
+    const reconnectPrinter = async () => {
+      try {
+        const savedPrinterData = localStorage.getItem("printerConnection");
+        if (savedPrinterData) {
+          const printerInfo = JSON.parse(savedPrinterData);
+
+          const device = await navigator.bluetooth.requestDevice({
+            filters: [
+              {
+                services: ["000018f0-0000-1000-8000-00805f9b34fb"],
+                name: printerInfo.name,
+              },
+            ],
+            optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
+          });
+
+          await device.gatt.connect();
+          setBluetoothDevice(device);
+          setIsConnected(true);
+          setSavedPrinter(printerInfo);
+        }
+      } catch (error) {
+        console.error("Error reconnecting to printer:", error);
+        localStorage.removeItem("printerConnection");
+      }
+    };
+
+    reconnectPrinter();
   }, []);
 
   const handleDelete = (id) => {
@@ -118,73 +171,82 @@ export default function Transaksi() {
 
   const handlePrint = async (trans) => {
     try {
-      let device;
+      let device = bluetoothDevice;
 
-      if (!savedPrinter) {
-        // If no saved printer, request new connection
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
-        });
-
-        // Save printer info to Firebase
-        await setDoc(doc(db, "settings", "printer"), {
-          name: device.name,
-          id: device.id,
-        });
-        setSavedPrinter({ name: device.name, id: device.id });
-      } else {
-        // Use saved printer
-        const devices = await navigator.bluetooth.getDevices();
-        device = devices.find((d) => d.id === savedPrinter.id);
-
-        if (!device) {
-          // If saved printer not found, request new connection
+      if (!device || !device.gatt.connected) {
+        const printerDoc = await getDoc(doc(db, "settings", "printer"));
+        if (printerDoc.exists()) {
+          device = await navigator.bluetooth.requestDevice({
+            filters: [
+              {
+                services: ["000018f0-0000-1000-8000-00805f9b34fb"],
+                name: printerDoc.data().name,
+              },
+            ],
+            optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
+          });
+        } else {
           device = await navigator.bluetooth.requestDevice({
             filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
+            optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
           });
 
-          // Update saved printer info
           await setDoc(doc(db, "settings", "printer"), {
             name: device.name,
             id: device.id,
           });
           setSavedPrinter({ name: device.name, id: device.id });
         }
+
+        await device.gatt.connect();
+        setBluetoothDevice(device);
+        setIsConnected(true);
+
+        const printerInfo = {
+          name: device.name,
+          id: device.id,
+        };
+        localStorage.setItem("printerConnection", JSON.stringify(printerInfo));
       }
 
-      const server = await device.gatt.connect();
-      const service = await server.getPrimaryService(
+      if (!trans) {
+        alert("Printer berhasil terhubung!");
+        return;
+      }
+
+      const service = await device.gatt.getPrimaryService(
         "000018f0-0000-1000-8000-00805f9b34fb"
       );
       const characteristic = await service.getCharacteristic(
         "00002af1-0000-1000-8000-00805f9b34fb"
       );
 
-      // Modern receipt format with centered text and better spacing
       const receiptParts = [
         [
           "\x1B\x40", // Initialize printer
           "\x1B\x61\x01", // Center alignment
-          "\x1B\x21\x10", // Double height text
+          "\x1B\x21\x30", // Larger text (double height + double width)
           "SUNIK YOHAN\n",
           "\x1B\x21\x00", // Normal text
+          "Minuman & Makanan\n",
           "\n",
           "Kp dukuh, RT.03/RW.08, Cibadak\n",
-          "Kec. Ciampea, Kabupaten Bogor\n",
+          "Kec. Ciampea, Kab. Bogor\n",
           "Jawa Barat 16620\n",
-          "Telp: 0812-8425-8290\n\n",
-          "\x1B\x61\x00", // Left alignment
-          "================================\n",
-          "\x1B\x61\x01", // Center alignment
+          "Telp: 0812-8425-8290\n",
+          "\n",
+          "================================\n", // Changed to = for better visibility
+          "\x1B\x21\x10", // Double width
           "STRUK PEMBELIAN\n",
+          "\x1B\x21\x00", // Normal text
           "\x1B\x61\x00", // Left alignment
-          `Nomor   : ${trans.transactionCode}\n`,
-          `Tanggal : ${trans.date.toLocaleDateString("id-ID", {
+          `No.: ${trans.transactionCode}\n`,
+          `Tgl: ${trans.date.toLocaleDateString("id-ID", {
             year: "numeric",
             month: "long",
             day: "numeric",
           })}\n`,
-          `Waktu   : ${trans.date.toLocaleTimeString("id-ID", {
+          `Jam: ${trans.date.toLocaleTimeString("id-ID", {
             hour: "2-digit",
             minute: "2-digit",
           })}\n`,
@@ -192,38 +254,54 @@ export default function Transaksi() {
         ].join(""),
       ];
 
-      // Items section with better formatting
-      for (const item of trans.items) {
-        const itemName = `${item.namaBarang}${
-          item.size ? ` (${item.size})` : ""
-        }`;
-        const quantity = `${item.quantity}x`;
-        const price = `@Rp ${(item.harga || 0).toLocaleString()}`;
-        const total = `Rp ${(
-          (item.harga || 0) * item.quantity
-        ).toLocaleString()}`;
+      // Modified header format with better column separation
+      receiptParts.push(
+        "Nama Barang     Qty      Harga\n" + // Adjusted spacing
+          "================================\n"
+      );
 
-        receiptParts.push(
-          `${itemName}\n` + `${quantity.padEnd(6)}${price.padEnd(15)}${total}\n`
-        );
+      // Modified item formatting without subtotal
+      for (const item of trans.items) {
+        const itemName = item.namaBarang;
+        const quantity = item.quantity.toString();
+        const price = `Rp${(item.harga || 0).toLocaleString()}`;
+
+        // Format each item with fixed width columns
+        let itemLines = "";
+
+        // Handle long item names by splitting into multiple lines
+        if (itemName.length > 15) {
+          itemLines += `${itemName.slice(0, 15)}\n`;
+          itemLines += `${itemName.slice(15).padEnd(15)}`;
+        } else {
+          itemLines += itemName.padEnd(15);
+        }
+
+        itemLines += `${quantity.padStart(3)}  `;
+        itemLines += `${price.padStart(10)}\n`;
+
+        receiptParts.push(itemLines);
       }
 
-      // Footer section with payment details
+      // Modified footer with better alignment
       receiptParts.push(
         [
           "================================\n",
-          `TOTAL${" ".repeat(26)}Rp ${trans.total.toLocaleString()}\n`,
-          `TUNAI${" ".repeat(26)}Rp ${trans.paymentAmount.toLocaleString()}\n`,
-          `KEMBALI${" ".repeat(24)}Rp ${trans.change.toLocaleString()}\n`,
-          "================================\n\n",
+          "\x1B\x45\x01", // Bold on
+          `TOTAL      : Rp ${trans.total.toLocaleString().padStart(12)}\n`,
+          `TUNAI      : Rp ${trans.paymentAmount
+            .toLocaleString()
+            .padStart(12)}\n`,
+          `KEMBALIAN  : Rp ${trans.change.toLocaleString().padStart(12)}\n`,
+          "\x1B\x45\x00", // Bold off
+          "================================\n",
           "\x1B\x61\x01", // Center alignment
-          "Terima kasih atas kunjungan Anda\n\n",
-          "\x1B\x21\x10", // Double height text
-          "SELAMAT BERBELANJA KEMBALI\n",
-          "\x1B\x21\x00", // Normal text
           "\n",
-          "Barang yang sudah dibeli\n",
-          "tidak dapat ditukar/dikembalikan\n",
+          "Terima kasih atas kunjungan Anda\n",
+          "SELAMAT BERBELANJA KEMBALI\n",
+          "\n",
+          "* Barang yang sudah dibeli *\n",
+          "* tidak dapat ditukar/dikembalikan *\n",
           "\n\n\n", // Paper feed
           "\x1D\x56\x41\x03", // Cut paper
         ].join("")
@@ -239,14 +317,44 @@ export default function Transaksi() {
       alert("Printing started!");
     } catch (error) {
       console.error("Printing error:", error);
-      if (error.name === "NotFoundError") {
-        // Clear saved printer if not found
-        await deleteDoc(doc(db, "settings", "printer"));
-        setSavedPrinter(null);
-        alert("Printer tidak ditemukan. Silakan hubungkan printer baru.");
+      setIsConnected(false);
+      setBluetoothDevice(null);
+      if (error.name === "NotFoundError" || error.name === "NetworkError") {
+        alert("Printer tidak ditemukan. Silakan hubungkan ulang printer.");
       } else {
         alert("Gagal mencetak. Silakan cek koneksi printer Anda.");
       }
+      localStorage.removeItem("printerConnection");
+    }
+  };
+
+  const getButtonText = () => {
+    if (isConnected && savedPrinter) {
+      return `Printer: ${savedPrinter.name} (Terhubung)`;
+    } else if (lastConnectedPrinter) {
+      return `Hubungkan ke ${lastConnectedPrinter.name}`;
+    }
+    return "Hubungkan Printer";
+  };
+
+  const handleConnectPrinter = async () => {
+    try {
+      let device = bluetoothDevice;
+
+      if (!device || !device.gatt.connected) {
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
+          optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
+        });
+
+        await device.gatt.connect();
+        setBluetoothDevice(device);
+        setIsConnected(true);
+        setSavedPrinter({ name: device.name, id: device.id });
+      }
+    } catch (error) {
+      console.error("Error reconnecting to printer:", error);
+      localStorage.removeItem("printerConnection");
     }
   };
 
@@ -263,7 +371,16 @@ export default function Transaksi() {
           }}
         >
           <h1>Daftar Transaksi</h1>
-          <Link href="/dashboard/transaksi/form">Tambahkan Transaksi</Link>
+          <div style={{ display: "flex", gap: "1rem" }}>
+            <button
+              onClick={() => handlePrint()}
+              className="btn btn-primary"
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+            >
+              <FaPrint /> {getButtonText()}
+            </button>
+            <Link href="/dashboard/transaksi/form">Tambahkan Transaksi</Link>
+          </div>
         </div>
 
         {isLoading ? (
